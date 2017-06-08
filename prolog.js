@@ -106,7 +106,6 @@ class True extends Term {
   };
 }
 
-
 class Rule {
   constructor(head, body) {
     this.head = head;
@@ -148,9 +147,9 @@ class Database {
   constructor(rules) {
     this.rules = rules;
   }
+
   *query(goal) {
     for (var i = 0, rule; rule = this.rules[i]; i++) {
-      // console.log("hi");
       var match = rule.head.match(goal);
       if (match) {
         var head = rule.head.substitute(match);
@@ -163,26 +162,160 @@ class Database {
   }
 }
 
-//var knownTerm = Term.of('father_child', [Term.of('eric'), Term.of('thorne')]);
-//var goal = Term.of('father_child', [Term.of('eric'), Term.of('thorne')]);
-//var bindings = goal.match(knownTerm);
-//console.log(bindings);
+class Lexer {
+  *parse(text) {
+    var tokenRegexp = /[A-Za-z_]+|:\-|[()\.,]/g;
+    var match;
+    while ((match = tokenRegexp.exec(text)) !== null) {
+      yield match[0];
+    }
+  }
+}
 
-// var goal = Term.of("person", [Term.of("Hillary")]);
-// var bindings = goal.match(Term.of("person", [Term.of("Hillary")]));
-// console.log(bindings);
+class Parser {
+  constructor(tokens) {
+    this.current;
+    this.done = false;
+    this.scope;
+    this.tokens = tokens;
+  }
+  next() {
+    var next = this.tokens.next();
+    this.current = next.value;
+    this.done = next.done;
+  }
+  parseAtom() {
+    var name = this.current;
+    if (!/^[A-Za-z_]+$/.test(name)) {
+      throw new SyntaxError('Bad atom name: ' + name);
+    }
+    this.next();
+    return name;
+  }
+  parseTerm() {
+    if (this.current === '(') {
+      this.next(); // eat (
+      var args = [];
+      while (this.current !== ')') {
+        args.push(this.parseTerm());
+        if (this.current !== ',' && this.current !== ')') {
+          throw new SyntaxError('Expected , or ) in term but got ' + this.current);
+        }
+        if (this.current === ',') {
+          this.next(); // eat ,
+        }
+      }
+      this.next(); // eat )
+      return new Conjunction(args);
+    }
+    var functor = this.parseAtom();
+    if (/^[A-Z_][A-Za-z_]*$/.test(functor)) {
+      if (functor === '_') {
+        return new Variable('_');
+      }
+      // variable X in the same scope should point to the same object
+      var variable = this.scope[functor];
+      if (!variable) {
+        variable = this.scope[functor] = new Variable(functor);
+      }
+      return variable;
+    }
+    if (this.current !== '(') {
+      return new Term(functor);
+    }
+    this.next(); // eat (
+    var args = [];
+    while (this.current !== ')') {
+      args.push(parseTerm());
+      if (this.current !== ',' && this.current !== ')') {
+        throw new SyntaxError('Expected , or ) in term but got ' + this.current);
+      }
+      if (this.current === ',') {
+        this.next(); // eat ,
+      }
+    }
+    this.next(); // eat )
+    return new Term(functor, args);
+  }
+  parseRule() {
+    this.next(); // start the tokens iterator
+    var head = this.parseTerm();
+    if (this.current === '.') {
+      this.next(); // eat .
+      return new Rule(head, Term.TRUE);
+    }
+    if (this.current !== ':-') {
+      throw new SyntaxError('Expected :- in rule but got ' + this.current);
+    }
+    this.next(); // eat :-
+    var args = [];
+    while (this.current !== '.') {
+      args.push(parseTerm());
+      if (this.current !== ',' && this.current !== '.') {
+        throw new SyntaxError('Expected , or ) in term but got ' + this.current);
+      }
+      if (this.current === ',') {
+        this.next(); // eat ,
+      }
+    }
+    this.next(); // eat .
+    var body;
+    if (args.length === 1) {
+      // body is a regular Term
+      body = args[0];
+    } else {
+      // body is a conjunction of all terms
+      body = new Conjunction(args);
+    }
+    return new Rule(head, body);
+  }
+  parse() {
+    this.next();
+    var rules = [];
+    while (!this.done) {
+      // each rule gets its own scope for variables
+      this.scope = {};
+      rules.push(this.parseRule());
+    }
+    return rules;
+  }
+  //parseTerm() {
+  //  this.scope = { };
+  //  return this.parseTerm();
+  //}
+}
+
+var program = `
+  mother(stephanie, thorne).
+  mother(stephanie, kristen).
+  mother(stephanie, felicia).
+`;
+
+var code = new Lexer().parse(program);
+// for (let token of code) {
+// console.log(token);
+// }
+
+// return;
+
+var rules = new Parser(code).parse();
+
+console.log(rules);
+
+return;
 
 var X = new Variable("X");
 var Y = new Variable("Y");
 var Z = new Variable("Z");
 
 var db = new Database([
+  // Facts.
   new Rule(Term.of("father", [Term.of("Hugh"), Term.of("Hillary")]), new True()),
-
   new Rule(Term.of("mother", [Term.of("Hillary"), Term.of("Chelsea")]), new True()),
   new Rule(Term.of("father", [Term.of("Bill"), Term.of("Chelsea")]), new True()),
-
   new Rule(Term.of("father", [Term.of("Bill"), Term.of("Bill's fake child")]), new True()),
+
+  // Rules.
   // if x is a mother of y, x is a parent of y
   new Rule(Term.of("parent", [X, Y]), Term.of("mother", [X, Y])),
   // if x is a father of y, x is a parent of y
@@ -210,21 +343,3 @@ for (sibling of db.query(Term.of("sibling", [new Variable("X"), Term.of("Chelsea
 for (ancestor of db.query(Term.of("ancestor", [new Variable("X"), Term.of("Chelsea")]))) {
   console.log(ancestor);
 }
-
-
-return;
-
-var knownTerm = Term.of('father_child', [Term.of('eric'), Term.of('thorne')]);
-var x = new Variable('X');
-var goal = Term.of('father_child', [Term.of('eric'), x]);
-var bindings = goal.match(knownTerm);
-
-console.log(bindings);
-
-var value = goal.substitute(bindings);
-console.log(`Goal with substituted variables: ${JSON.stringify(value)}`);
-
-var goal = Term.of("father_child", [new Variable("Y"), Term.of("thorne")]);
-var bindings = goal.match(knownTerm);
-console.log(bindings);
-console.log(`Thorne's dad is: ${JSON.stringify(goal.substitute(bindings))}`);
