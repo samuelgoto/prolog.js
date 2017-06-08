@@ -5,21 +5,14 @@ class Variable {
     }
 
     *unify(value) {
-	// yield "foo";
-	// yield "bar";
-	// console.log("Unifying " + value);
 	if (!this.bound) {
-	    // console.log("Not bound");
 	    this.value = value;
 	    this.bound = true;
 	    yield false;
-	    // console.log("already bound");
 	    this.bound = false;
 	} else if (this.value == value) {
-	    // console.log("value equals");
 	    yield false;
 	}
-	// console.log("done");
     }
 
     isBound() {
@@ -40,20 +33,134 @@ class Variable {
     }
 }
 
+function when(expression, then) {
+  for (let a of expression) {
+    then();
+  }
+}
+
 function* person(p) {
-    // console.log("person -- chelsea");
     for (let a of unify(p, "Chelsea")) {
 	yield false;
     }
-    // console.log("person -- hillary");
     for (let a of unify(p, "Hillary")) {
 	yield false;
     }
-    // console.log("person -- bill");
     for (let a of unify(p, "Bill")) {
 	yield false;
     }
 }
+
+function* brother(Person, Brother) {
+    for (let a of unify(Person, "Hillary")) {
+        for (let c of unify(Brother, "Tony")) {
+            // console.log(Person);
+	    yield false;
+	}
+	for (let c of unify(Brother, "Hugh")) {
+	    yield false;
+	}
+    }
+    for (let a of unify(Person, "Bill")) {
+	for (let c of unify(Brother, "Roger")) {
+	    yield false;
+	}
+    }
+}
+
+class Prolog {
+  constructor() {
+    this.facts = {};
+  }
+
+  fact(name, ...params) {
+    params.unshift(name);
+    let path = this.facts;
+    for (let param of params) {
+      path[param] = path[param] || {};
+      path = path[param];
+    }
+    return this;
+  }
+
+  *eval(name, ...params) {
+    console.log(`Evaling ${name} and ${JSON.stringify(params)} with facts: ${JSON.stringify(this.facts)}`);
+    params.unshift(name);
+    let roots = [this.facts];
+
+    for (let param of params) {
+      var trees = [];
+      console.log(`Matching ${param} to ${JSON.stringify(roots)}`);
+      for (let root of roots) {
+	for (let key in root) {
+          console.log(`Looking for unifications ${param} at ${key}`);
+	  for (let a of unify(param, key)) {
+	    trees.push(root[key]);
+	    console.log(param);
+	    console.log(`Digging deeper into ${JSON.stringify(root[key])} since ${param} unifies`);
+	    if (Object.keys(root[key]).length == 0) {
+	      yield false;
+	    }
+	  }
+	}
+      }
+      roots = trees;
+    }
+  }
+}
+
+let prolog = new Prolog();
+
+prolog.fact("brother", "Hillary", "Tony");
+
+var q = new Variable();
+when(brother(q, "Tony"), () => console.log(`${q.getValue()} is Tony's brother`));
+
+var r = new Variable();
+when(prolog.eval("brother", r, "Tony"), () => console.log(`${r.getValue()} is Tony's brother`));
+console.log(r);
+
+
+return;
+
+prolog.fact("person", "Hillary");
+prolog.fact("person", "Bill");
+prolog.fact("person", "Chelsea");
+var p = new Variable();
+when(prolog.eval("person", p), () => console.log(`${p.getValue()} is a person`));
+
+// return;
+
+prolog.fact("brother", "Hillary", "Tony");
+when(prolog.eval("brother", "Hillary", "Tony"), () => console.log(`Hillary and Tony are brothers!`));
+
+// Equivalent to stating:
+// person("Hillary")
+// person("Bill")
+// person("Chelsea")
+prolog.fact("person", "Bill");
+when(prolog.eval("person", "Hillary"), () => console.log(`Hillary is a person`));
+
+// console.log(p.getValue().getValue());
+
+prolog
+    .fact("person", "Hillary")
+    .fact("person", "Bill")
+    .fact("person", "Chelsea")
+    .fact("brother", "Hillary", "Tony")
+    .fact("brother", "Hillary", "Hugh");
+
+var p = new Variable();
+when(prolog.eval("brother", "Hillary", p), () => console.log(`${p.getValue()} is Hillary's brother`));
+
+
+
+return;
+
+when(person("Hillary"), () => console.log("Hillary is a person"));
+when(person("Sam"), () => console.log("Sam is a person"));
+
+return;
 
 function get(value) {
     if (!(value instanceof Variable)) {
@@ -71,10 +178,6 @@ function* unify(var1, var2) {
     let value1 = get(var1);
     let value2 = get(var2);
 
-  // console.log("unifying");
-  // console.log(value1);
-  // console.log(value2);
-
     if (value1 == value2) {
 	// Both literal types.
 	yield false;
@@ -84,24 +187,6 @@ function* unify(var1, var2) {
 	}
     } else if (value2.unify) {
 	for (let c of value2.unify(value1)) {
-	    yield false;
-	}
-    }
-}
-
-function* brother(Person, Brother) {
-    // Hilary has Tony and Hugh as brothers.
-    for (let a of unify(Person, "Hillary")) {
-	for (let c of unify(Brother, "Tony")) {
-	    yield false;
-	}
-	for (let c of unify(Brother, "Hugh")) {
-	    yield false;
-	}
-    }
-    // Bill has Roger as brother.
-    for (let a of unify(Person, "Bill")) {
-	for (let c of unify(Brother, "Roger")) {
 	    yield false;
 	}
     }
@@ -142,7 +227,6 @@ class List {
   }
 
   *unify(var1) {
-    // console.log("hi");
     let value1 = get(var1);
     if (value1 instanceof List) {
       for (let a of unify(this.head, value1.head)) {
@@ -159,21 +243,16 @@ class List {
 
   static *create(First, Second, Var) {
     let result = new List(First, new List(Second, null));
-    // console.log(result);
     for (let c of unify(Var, result)) {
       yield false;
     }
   }
 }
 
-function when(expression, then) {
-  for (let a of expression) {
-    then();
-  }
-}
 
 let second = new Variable();
-when(List.create("a", second, new List("a", new List("b", null))), () => console.log(`Second element is ${second.getValue()}`));
+when(List.create("a", second, new List("a", new List("b", null))),
+     () => console.log(`Second element is ${second.getValue()}`));
 
 let Height = new Variable();
 for (let s of square(10, Height)) {
@@ -182,7 +261,8 @@ for (let s of square(10, Height)) {
 
 
 let list = new Variable();
-when(List.create("a", "b", list), () => console.log(list.getValue()));
+when(List.create("a", "b", list),
+     () => console.log(list.getValue()));
 
 
 let Parent = new Variable();
@@ -190,4 +270,5 @@ let Parent = new Variable();
 let Person = new Variable();
 let Uncle = new Variable();
 
-when(uncle(Person, Uncle), () => console.log(`${Person.getValue()}'s uncle is ${Uncle.getValue()}`));
+when(uncle(Person, Uncle),
+     () => console.log(`${Person.getValue()}'s uncle is ${Uncle.getValue()}`));
