@@ -1,296 +1,176 @@
 class Variable {
-    constructor(opt_value) {
-	this.value = opt_value;
-	this.bound = false;
-    }
-
-    *unify(value) {
-	if (!this.bound) {
-	    this.value = value;
-	    this.bound = true;
-	    yield false;
-	    this.bound = false;
-	} else if (this.value == value) {
-	    yield false;
-	}
-    }
-
-    isBound() {
-	return this.bound;
-    }
-
-    setValue(value) {
-	this.value = value;
-    }
-
-    getValue() {
-      if (!this.bound) {
-	return this;
-      } else if  (this.value instanceof Variable) {
-	return this.value.getValue();
-      }
-      return this.value;
-    }
-}
-
-function when(expression, then) {
-  for (let a of expression) {
-    then();
-  }
-}
-
-function* person(p) {
-    for (let a of unify(p, "Chelsea")) {
-	yield false;
-    }
-    for (let a of unify(p, "Hillary")) {
-	yield false;
-    }
-    for (let a of unify(p, "Bill")) {
-	yield false;
-    }
-}
-
-function* brother(Person, Brother) {
-    for (let a of unify(Person, "Hillary")) {
-        for (let c of unify(Brother, "Tony")) {
-            // console.log(Person);
-	    yield false;
-	}
-	for (let c of unify(Brother, "Hugh")) {
-	    yield false;
-	}
-    }
-    for (let a of unify(Person, "Bill")) {
-	for (let c of unify(Brother, "Roger")) {
-	    yield false;
-	}
-    }
-}
-
-class Prolog {
-  constructor() {
-    this.facts = {};
+  constructor(name) {
+    this.name = name;
   }
 
-  fact(name, ...params) {
-    params.unshift(name);
-    let path = this.facts;
-    for (let param of params) {
-      path[param] = path[param] || {};
-      path = path[param];
+  match(other) {
+    var bindings = new Map();
+    if (this !== other) {
+        bindings.set(this, other);
+    }
+    return bindings;
+  }
+
+  substitute(bindings) {
+    var value = bindings.get(this);
+    if (value) {
+      // if value is a compound term then substitute
+      // variables inside it too
+      return value.substitute(bindings);
     }
     return this;
   }
+}
 
-  *eval(name, ...params) {
-    console.log(`Evaling ${name} and ${JSON.stringify(params)} with facts: ${JSON.stringify(this.facts)}`);
-    params.unshift(name);
-    let roots = [];
-
-    for (let fact in this.facts) {
-      roots.push({root: this.facts[fact], depth: 0, name: fact});
-    }
-
-    // console.log(params.length);
-
-    while (roots.length > 0) {
-      // console.log(roots);
-      let root = roots.shift();
-      console.log(`State1 ${JSON.stringify(params)}`);
-      for (let a of unify(root.name, params[root.depth])) {
-	console.log(`Unified ${root.name} to ${JSON.stringify(params[root.depth])} at level ${root.depth}`);
-	console.log(`State2 ${JSON.stringify(params)}`);
-	if ((root.depth + 1) == params.length) {
-	  console.log(`Yielding ${JSON.stringify(params)}`);
-	  yield false;
-	} else {
-	  for (let key in root.root) {
-	    console.log(`Adding ${JSON.stringify(key)} to the list`);
-	    // console.log(roots);
-	    roots.unshift({root: root.root[key], name: key, depth: root.depth + 1});
-	  }
-	}
-      }
-      console.log(`State3 ${JSON.stringify(params)}`);
-    }
+class Term {
+  constructor(functor, args) {
+    this.functor = functor;
+    this.args = args || [];
   }
+  match(other) {
+    if (other instanceof Term) {
+      if (this.functor !== other.functor) {
+        return null;
+      }
+      if (this.args.length !== other.args.length) {
+        return null;
+      }
+      return zip([this.args, other.args]).map(function(args) {
+        return args[0].match(args[1]);
+      }).reduce(this.mergeBindings, new Map());
+    }
+    return other.match(this);
+  };
+
+  substitute(bindings) {
+    return new Term(this.functor, this.args.map(function(arg) {
+      return arg.substitute(bindings);
+    }));
+  };
+
+  *query(database) {
+    yield* database.query(this);
+  };
+
+  mergeBindings(bindings1, bindings2) {
+    if (!bindings1 || !bindings2) {
+      return null;
+    }
+    var conflict = false;
+    var bindings = new Map();
+    bindings1.forEach(function(value, variable) {
+      bindings.set(variable, value);
+    });
+    bindings2.forEach(function(value, variable) {
+      var other = bindings.get(variable);
+      if (other) {
+        var sub = other.match(value);
+        if (!sub) {
+          conflict = true;
+        } else {
+          sub.forEach(function(value, variable) {
+            bindings.set(variable, value);
+          });
+        }
+      } else {
+        bindings.set(variable, value);
+      }
+    });
+    if (conflict) {
+      return null;
+    }
+    return bindings;
+  };
 }
 
-let prolog = new Prolog();
+Term.TRUE = new Term('true');
 
-prolog.fact("brother", "Hillary", "Tony");
+Term.TRUE.substitute = function() {
+    return this;
+};
 
-var r = new Variable();
-when(prolog.eval("brother", r, "Tony"), () => console.log(`${r.getValue()} is Tony's brother`));
-console.log(r);
+Term.TRUE.query = function*() {
+    yield this;
+};
 
-return;
-
-prolog.fact("person", "Hillary");
-prolog.fact("person", "Bill");
-prolog.fact("person", "Chelsea");
-
-when(prolog.eval("person", "Hillary"), () => console.log(`Hillary is a person`));
-
-var p = new Variable();
-when(prolog.eval("person", p), () => console.log(`${p.getValue()} is a person`));
-
-when(prolog.eval("brother", "Hillary", "Tony"), () => console.log(`Hillary and Tony are brothers!`));
-
-var p = new Variable();
-when(prolog.eval("brother", "Hillary", p), () => console.log(`${p.getValue()} is Hillary's brother`));
+function zip(arrays) {
+    return arrays[0].map(function(element, index) {
+        return arrays.map(function(array) {
+            return array[index];
+        });
+    });
 
 
-// prolog.fact("brother", "Hillary", "Tony");
-
-// prolog.eval("person", "Hillary").next();
-
-return;
-
-var q = new Variable();
-when(brother(q, "Tony"), () => console.log(`${q.getValue()} is Tony's brother`));
-
-
-
-return;
-
-// return;
-
-
-// Equivalent to stating:
-// person("Hillary")
-// person("Bill")
-// person("Chelsea")
-prolog.fact("person", "Bill");
-when(prolog.eval("person", "Hillary"), () => console.log(`Hillary is a person`));
-
-// console.log(p.getValue().getValue());
-
-prolog
-    .fact("person", "Hillary")
-    .fact("person", "Bill")
-    .fact("person", "Chelsea")
-    .fact("brother", "Hillary", "Tony")
-    .fact("brother", "Hillary", "Hugh");
-
-
-
-
-return;
-
-when(person("Hillary"), () => console.log("Hillary is a person"));
-when(person("Sam"), () => console.log("Sam is a person"));
-
-return;
-
-function get(value) {
-    if (!(value instanceof Variable)) {
-	return value;
-    }
-
-    if (!value.isBound()) {
-	return value;
-    }
-
-    return value.getValue();
 }
 
-function* unify(var1, var2) {
-    let value1 = get(var1);
-    let value2 = get(var2);
-
-    if (value1 == value2) {
-	// Both literal types.
-	yield false;
-    } else if (value1.unify) {
-	for (let c of value1.unify(value2)) {
-	    yield false;
-	}
-    } else if (value2.unify) {
-	for (let c of value2.unify(value1)) {
-	    yield false;
-	}
-    }
-}
-
-function* parent(Person, Parent) {
-    for (let a of unify(Person, "Chelsea")) {
-	for (let c of unify(Parent, "Hillary")) {
-	    yield false;
-	}
-    }
-    for (let a of unify(Person, "Chelsea")) {
-	for (let c of unify(Parent, "Bill")) {
-	    yield false;
-	}
-    }
-}
-
-function* uncle(Person, Uncle) {
-    let Parent = new Variable();
-    for (let p of parent(Person, Parent)) {
-	for (let u of brother(Parent, Uncle)) {
-	    yield false;
-	}
-    }
-}
-
-function* square(Width, Height) {
-    for (let a of unify(Width, Height)) {
-	yield false;
-    }
-}
-
-class List {
-  constructor(head, tail) {
+class Rule {
+  constructor(head, body) {
     this.head = head;
-    this.tail = tail;
+    this.body = body;
+  }
+}
+
+class Conjunction extends Term {
+  constructor(args) {
+    this.args = args;
   }
 
-  *unify(var1) {
-    let value1 = get(var1);
-    if (value1 instanceof List) {
-      for (let a of unify(this.head, value1.head)) {
-	for (let b of unify(this.tail, value1.tail)) {
-	  yield false;
-	}
-      }
-    } else if (value1 instanceof Variable) {
-      for (let a of var1.unify(this)) {
-	yield false;
+  *query(database) {
+    var self = this;
+    function* solutions(index, bindings) {
+      var arg = self.args[index];
+      if (!arg) {
+        yield self.substitute(bindings);
+      } else {
+        for (var item of database.query(arg.substitute(bindings))) {
+          var unified = mergeBindings(arg.match(item), bindings);
+          if (unified) {
+            yield* solutions(index + 1, unified);
+          }
+        }
       }
     }
-  }
+    yield* solutions(0, new Map());
+  };
 
-  static *create(First, Second, Var) {
-    let result = new List(First, new List(Second, null));
-    for (let c of unify(Var, result)) {
-      yield false;
+  substitute(bindings) {
+    return new Conjunction(this.args.map(function(arg) {
+      return arg.substitute(bindings);
+    }));
+  };
+}
+
+class Database {
+  constructor(rules) {
+    this.rules = rules;
+  }
+  *query(goal) {
+    for (var i = 0, rule; rule = this.rules[i]; i++) {
+      var match = rule.head.match(goal);
+      if (match) {
+        var head = rule.head.substitute(match);
+        var body = rule.body.substitute(match);
+        for (var item of body.query(this)) {
+          yield head.substitute(body.match(item));
+        }
+      }
     }
   }
 }
 
+var knownTerm = new Term('father_child', [
+    new Term('eric'), new Term('thorne')
+]);
 
-let second = new Variable();
-when(List.create("a", second, new List("a", new List("b", null))),
-     () => console.log(`Second element is ${second.getValue()}`));
+var x = new Variable('X');
 
-let Height = new Variable();
-for (let s of square(10, Height)) {
-  console.log(`The height of a width=10 square is ${Height.getValue()}`);
-}
+var goal = new Term('father_child', [
+    new Term('eric'), x
+]);
 
+var bindings = goal.match(knownTerm);
 
-let list = new Variable();
-when(List.create("a", "b", list),
-     () => console.log(list.getValue()));
+console.log(bindings);
 
-
-let Parent = new Variable();
-
-let Person = new Variable();
-let Uncle = new Variable();
-
-when(uncle(Person, Uncle),
-     () => console.log(`${Person.getValue()}'s uncle is ${Uncle.getValue()}`));
+var value = goal.substitute(bindings);
+console.log(`Goal with substituted variables: ${JSON.stringify(value)}`);
