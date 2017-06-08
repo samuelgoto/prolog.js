@@ -31,20 +31,25 @@ class Variable {
     }
 
     getValue() {
-	return this.value;
+      if (!this.bound) {
+	return this;
+      } else if  (this.value instanceof Variable) {
+	return this.value.getValue();
+      }
+      return this.value;
     }
 }
 
 function* person(p) {
-    console.log("person -- chelsea");
+    // console.log("person -- chelsea");
     for (let a of unify(p, "Chelsea")) {
 	yield false;
     }
-    console.log("person -- hillary");
+    // console.log("person -- hillary");
     for (let a of unify(p, "Hillary")) {
 	yield false;
     }
-    console.log("person -- bill");
+    // console.log("person -- bill");
     for (let a of unify(p, "Bill")) {
 	yield false;
     }
@@ -65,17 +70,22 @@ function get(value) {
 function* unify(var1, var2) {
     let value1 = get(var1);
     let value2 = get(var2);
-    if (value1 instanceof Variable) {
+
+  // console.log("unifying");
+  // console.log(value1);
+  // console.log(value2);
+
+    if (value1 == value2) {
+	// Both literal types.
+	yield false;
+    } else if (value1.unify) {
 	for (let c of value1.unify(value2)) {
 	    yield false;
 	}
-    } else if (value2 instanceof Variable) {
+    } else if (value2.unify) {
 	for (let c of value2.unify(value1)) {
 	    yield false;
-	}	
-    } else if (value1 == value2) {
-	// Both literal types.
-	yield false;
+	}
     }
 }
 
@@ -116,36 +126,68 @@ function* uncle(Person, Uncle) {
 	for (let u of brother(Parent, Uncle)) {
 	    yield false;
 	}
-    }    
+    }
 }
 
-console.log("hello world");
+function* square(Width, Height) {
+    for (let a of unify(Width, Height)) {
+	yield false;
+    }
+}
 
-// let p = new Variable();
+class List {
+  constructor(head, tail) {
+    this.head = head;
+    this.tail = tail;
+  }
 
-// console.log(p.unify("Foo").next());
-// console.log(p.getValue());
+  *unify(var1) {
+    // console.log("hi");
+    let value1 = get(var1);
+    if (value1 instanceof List) {
+      for (let a of unify(this.head, value1.head)) {
+	for (let b of unify(this.tail, value1.tail)) {
+	  yield false;
+	}
+      }
+    } else if (value1 instanceof Variable) {
+      for (let a of var1.unify(this)) {
+	yield false;
+      }
+    }
+  }
 
-// console.log(p.unify("Foo").next());
-// console.log(p.getValue());
+  static *create(First, Second, Var) {
+    let result = new List(First, new List(Second, null));
+    // console.log(result);
+    for (let c of unify(Var, result)) {
+      yield false;
+    }
+  }
+}
 
-// for (let a of person(p)) {
-//    console.log(p.getValue());
-// }
+function when(expression, then) {
+  for (let a of expression) {
+    then();
+  }
+}
+
+let second = new Variable();
+when(List.create("a", second, new List("a", new List("b", null))), () => console.log(`Second element is ${second.getValue()}`));
+
+let Height = new Variable();
+for (let s of square(10, Height)) {
+  console.log(`The height of a width=10 square is ${Height.getValue()}`);
+}
+
+
+let list = new Variable();
+when(List.create("a", "b", list), () => console.log(list.getValue()));
+
 
 let Parent = new Variable();
-for (let c of brother("Bill", Parent)) {
-    // console.log("hilary's brother is: " + Parent.getValue());
-}
-
-// return;
 
 let Person = new Variable();
 let Uncle = new Variable();
 
-for (let u of uncle(Person, Uncle)) {
-    console.log(Person.getValue() + "'s uncle is " + Uncle.getValue());
-}
-
-console.log("done");
-
+when(uncle(Person, Uncle), () => console.log(`${Person.getValue()}'s uncle is ${Uncle.getValue()}`));
