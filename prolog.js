@@ -86,25 +86,33 @@ class Prolog {
   *eval(name, ...params) {
     console.log(`Evaling ${name} and ${JSON.stringify(params)} with facts: ${JSON.stringify(this.facts)}`);
     params.unshift(name);
-    let roots = [this.facts];
+    let roots = [];
 
-    for (let param of params) {
-      var trees = [];
-      console.log(`Matching ${param} to ${JSON.stringify(roots)}`);
-      for (let root of roots) {
-	for (let key in root) {
-          console.log(`Looking for unifications ${param} at ${key}`);
-	  for (let a of unify(param, key)) {
-	    trees.push(root[key]);
-	    console.log(param);
-	    console.log(`Digging deeper into ${JSON.stringify(root[key])} since ${param} unifies`);
-	    if (Object.keys(root[key]).length == 0) {
-	      yield false;
-	    }
+    for (let fact in this.facts) {
+      roots.push({root: this.facts[fact], depth: 0, name: fact});
+    }
+
+    // console.log(params.length);
+
+    while (roots.length > 0) {
+      // console.log(roots);
+      let root = roots.shift();
+      console.log(`State1 ${JSON.stringify(params)}`);
+      for (let a of unify(root.name, params[root.depth])) {
+	console.log(`Unified ${root.name} to ${JSON.stringify(params[root.depth])} at level ${root.depth}`);
+	console.log(`State2 ${JSON.stringify(params)}`);
+	if ((root.depth + 1) == params.length) {
+	  console.log(`Yielding ${JSON.stringify(params)}`);
+	  yield false;
+	} else {
+	  for (let key in root.root) {
+	    console.log(`Adding ${JSON.stringify(key)} to the list`);
+	    // console.log(roots);
+	    roots.unshift({root: root.root[key], name: key, depth: root.depth + 1});
 	  }
 	}
       }
-      roots = trees;
+      console.log(`State3 ${JSON.stringify(params)}`);
     }
   }
 }
@@ -113,26 +121,42 @@ let prolog = new Prolog();
 
 prolog.fact("brother", "Hillary", "Tony");
 
-var q = new Variable();
-when(brother(q, "Tony"), () => console.log(`${q.getValue()} is Tony's brother`));
-
 var r = new Variable();
 when(prolog.eval("brother", r, "Tony"), () => console.log(`${r.getValue()} is Tony's brother`));
 console.log(r);
-
 
 return;
 
 prolog.fact("person", "Hillary");
 prolog.fact("person", "Bill");
 prolog.fact("person", "Chelsea");
+
+when(prolog.eval("person", "Hillary"), () => console.log(`Hillary is a person`));
+
 var p = new Variable();
 when(prolog.eval("person", p), () => console.log(`${p.getValue()} is a person`));
 
+when(prolog.eval("brother", "Hillary", "Tony"), () => console.log(`Hillary and Tony are brothers!`));
+
+var p = new Variable();
+when(prolog.eval("brother", "Hillary", p), () => console.log(`${p.getValue()} is Hillary's brother`));
+
+
+// prolog.fact("brother", "Hillary", "Tony");
+
+// prolog.eval("person", "Hillary").next();
+
+return;
+
+var q = new Variable();
+when(brother(q, "Tony"), () => console.log(`${q.getValue()} is Tony's brother`));
+
+
+
+return;
+
 // return;
 
-prolog.fact("brother", "Hillary", "Tony");
-when(prolog.eval("brother", "Hillary", "Tony"), () => console.log(`Hillary and Tony are brothers!`));
 
 // Equivalent to stating:
 // person("Hillary")
@@ -150,8 +174,6 @@ prolog
     .fact("brother", "Hillary", "Tony")
     .fact("brother", "Hillary", "Hugh");
 
-var p = new Variable();
-when(prolog.eval("brother", "Hillary", p), () => console.log(`${p.getValue()} is Hillary's brother`));
 
 
 
